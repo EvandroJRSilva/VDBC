@@ -61,28 +61,3 @@ for dataSet = 1:21
     
     save(fileName, 'results')
 end
-
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
