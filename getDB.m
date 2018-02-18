@@ -1,5 +1,4 @@
 function [dataF, dataTNum, numCls, numDim] = getDB(name)
-%function [dataF, dataTBin, dataTNum, numCls, numDim] = getDB(name)
         
     datafile = dlmread(strcat(name, '.dt'));
     
@@ -11,18 +10,7 @@ function [dataF, dataTNum, numCls, numDim] = getDB(name)
     % Creating feature and target matrices
     dataF = datafile(2:end, 1:numDim);
     dataTNum = datafile(2:end, end);
-    
-% ====== DEPRACATED =======================================================
-%     nlines = dline(1);
-%     dataTBin = datafile(2:end, numDim+1:end);
-%             
-%     dataTNum = zeros(size(dataTBin, 1), 1);
-%     
-%     for i=1:size(dataTBin, 1)
-%         dataTNum(i) = find(dataTBin(i, :) == 1);
-%     end
-% =========================================================================            
-
+         
     % Some classes have less than 2 members. Those will be ignored
     classCount = histc(dataTNum, unique(dataTNum));
     smallCls = find(classCount < 2);
