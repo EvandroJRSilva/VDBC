@@ -1,11 +1,8 @@
 # VDBC
+SMOTE Modification is the second modification related in [1]. The *a priori* probability of each class is found and the mean of probabilites is calculated. All classes in which *a priori* probability is lesser than the mean are selected to be increased through a SMOTE process. Specifically a synthetic instance is created between every pair of instances of a class. After the oversampling VDBC works normally.
 
-Voronoi Diagram Based Classifier (VDBC) is a Prototype Generation classification model based on Chang W* algorithm [1]. It tries to dynamically create regions through the sample space, assigning to each cell a respective class. The seeds are created as follows. For each training instance its nearest neighbor is found. A class verification is executed. If the neighbor is from the same class a seed (or centroid) is created between them. Otherwise the current instance becomes the seed. However, if the neighbor is a seed, an action will be performed only if the seed belongs to a different class. In this case the current instance also becomes a seed.
-
-All seeds are automatically assigned to the training sample class. After the training phase, the sample space is found to be divided into several cells, each one assigned to a different class. With the diagram constructed the testing phase begins. In the testing phase, for each unknown instance its nearest neighbor, i.e., the nearest seed is found. The unknown instance is classified accordingly to the nearest seed.
+Some results do not exist due to computational power and time constraints. Some data sets have a big number of instances, even for smaller classes. After SMOTE some data sets had a huge number of samples. For example, a single class with 500 instances to be increased would create more than 120 thousand synthetic samples. As a prototype generation algorithm VDBC diminishes this size, however after a long time of processing.
 
 **Related article**
 
-Evandro J.R. Silva and Cleber Zanchettin. "A Voronoi Diagram Based Classifier for Multiclass Imbalanced Data Sets". *2016 5th Brazilian Conference on Intelligent Systems (BRACIS)*, pp. 109 - 114, 2016.
-
-[1] Chin-Liang Chang. "Finding Prototypes For Nearest Neighbor Classifiers". *IEEE Transactions on Computers*, vol. C-23, no. 11, pp. 1179 - 1184, 1974.
+[1] Evandro J.R. Silva and Cleber Zanchettin. "A Voronoi Diagram Based Classifier for Multiclass Imbalanced Data Sets". *2016 5th Brazilian Conference on Intelligent Systems (BRACIS)*, pp. 109 - 114, 2016.
