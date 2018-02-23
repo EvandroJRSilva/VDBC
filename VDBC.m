@@ -1,64 +1,68 @@
-function [results] = VDBC(dataF, dataTNum, numCls, numDim, numFolds)
-% Function VDBC for Voronoi Diagram Based Classifier. It is based on Chang
-% W* algorithm:
-%   - Select a random instance;
-%   - Find its nearest neighbor
-%       + If they belong to the same class
-%           - Create a centroid between them.
-%       + Else
-%           - Current selected instance becomes a centroid.
-%   - Test unknown instances with built centroids
-
-%% Pre-process
-    % Vector to store MAUC values
-    results(numFolds) = 0;
-    % Separating data into k folds
-    foldIdx = kfoldIndices(numCls, dataTNum, numFolds);
+function [mauc] = VDBC(trainSet, trainTargets, testSet, testTargets, numDim, numCls)
+% VDBC algorithm with modification. Let C = {c1, c2, ..., cn} be the set of
+% classes and p(c_n) be the probability of a sample belong to class n. The 
+% average of all classes' probabilities is calculated and then compared to 
+% each single probability. The class with single probability lesser than 
+% the average is chosen to be increased via SMOTE.
     
-%% Train and Test
-    for k=1:numFolds
-        disp(strcat('ITERAÇÃO', num2str(k)));
-        
-        centroids = [];
-        
-        % Test Set
-        testIdx = foldIdx(k).indices;
-        testSet = dataF(testIdx, :); testTargets = dataTNum(testIdx);
-        
-        % Train Set
-        trainIdx = [];
-        for i=1:numFolds
-            if i ~= k
-                trainIdx = [trainIdx; foldIdx(i).indices];
-            end
-        end
-        trainSet = dataF(trainIdx, :); trainTargets = dataTNum(trainIdx);
-        
-        centroids = train(trainSet, trainTargets, numDim, centroids);
-        output = testing(testSet, centroids);
-        % size(unique(testTargets), 1) ---> sometimes not all classes are
-        % present on test set, so it is passed the size of present classes
-        results(k) = calculateMAUC(output, testTargets, size(unique(testTargets), 1));
+    % Finding classes to be increased through SMOTE
+    clsProbabilities = zeros(1, numCls);
+    for i=1:numCls
+        clsProbabilities(i) = size(find(trainTargets == i), 1)/size(trainSet, 1);
     end
+    toIncrease = find(clsProbabilities < mean(clsProbabilities));
+    [trainSet, trainTargets] = oversample(trainSet, trainTargets, toIncrease, numDim);
+    
+    centroids = [];
+    
+    centroids = train(trainSet, trainTargets, numDim, centroids);
+    output = testing(testSet, centroids);
+    % size(unique(testTargets), 1) ---> sometimes not all classes are
+    % present on test set, so it is passed the size of present classes
+    mauc = calculateMAUC(output, testTargets, size(unique(testTargets), 1));
 end
 
-function foldIdx = kfoldIndices(numCls, dataTNum, numFolds)
-% Function for creating indices for the k folds    
-    foldIdx(numFolds).indices = [];
-    clsInd(numCls).indices = [];
-    clsFoldInd(numCls).indices = [];
-    % Getting the indices of instances from each class and then the inside
-    % class indices for folds
-    for i=1:numCls
-        clsInd(i).indices = find(dataTNum == i);
-        clsFoldInd(i).indices = crossvalind('Kfold', size(clsInd(i).indices, 1), numFolds);
-    end
-    
-    for i=1:numFolds
-        for j=1:numCls
-            foldIdx(i).indices = [foldIdx(i).indices; clsInd(j).indices(clsFoldInd(j).indices == i)];
+function [trainSet, trainTargets] = oversample(trainSet, trainTargets, toIncrease, numDim)
+% Function to oversample selected classes
+
+    addSet = []; addTargets = [];
+    for i=1:size(toIncrease, 2)
+        class = toIncrease(i);
+        instances = trainSet(trainTargets == class, :);
+        
+        if size(instances, 1) > 1
+            % One new synthetic instance between each pair of instances
+            for n=1:size(instances,1)-1
+                for m=n+1:size(instances,1)
+                    newInst = zeros(1, numDim);
+                    for d=1:numDim
+                        newInst(1, d) = mean([instances(n, d) instances(m, d)]);
+                    end
+                    addSet = [addSet; newInst];
+                    addTargets = [addTargets; i];
+                end
+            end
+        else
+            % There is only one training instance. In this case there will 
+            % be 2 * numDim neighbors two for each dimension, + and - half 
+            % of its mean value
+            for d=1:numDim
+                meanDim = mean(trainSet(:, d));
+                        
+                newInsts = zeros(2, numDim);
+                newInsts(1,:) = instances; 
+                newInsts(2,:) = instances;
+                        
+                newInsts(1, d) = newInsts(1, d)+(0.5*meanDim);
+                newInsts(2, d) = newInsts(2, d)-(0.5*meanDim);
+                        
+                addSet = [addSet; newInsts];
+                addTargets = [addTargets; i; i];
+            end
         end
     end
+    
+    trainSet = [trainSet; addSet]; trainTargets = [trainTargets; addTargets];
 end
 
 function centroids = train(trainSet, trainTargets, numDim, centroids)
