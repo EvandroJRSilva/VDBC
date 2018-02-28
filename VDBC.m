@@ -1,62 +1,101 @@
-function [results] = VDBC(dataF, dataTNum, numCls, numDim, numFolds)
-% Function VDBC for Voronoi Diagram Based Classifier. It is based on Chang
-% W* algorithm:
-%   - Select a random instance;
-%   - Find its nearest neighbor
-%       + If they belong to the same class
-%           - Create a centroid between them.
-%       + Else
-%           - Current selected instance becomes a centroid.
-%   - Test unknown instances with built centroids
-
-%% Pre-process
-    % Vector to store MAUC values
-    results(numFolds) = 0;
-    % Separating data into k folds
-    foldIdx = kfoldIndices(numCls, dataTNum, numFolds);
+function [mauc] = VDBC(trainSet, trainTargets, testSet, testTargets, numDim, numCls)
+% VDBC with the third modification. The Generalized Fisher Index (GFI) is
+% calculated for each pair of classes. All pairs in which GFI value is less
+% then 0.15 will receive synthetic instances between them.
     
-%% Train and Test
-    for k=1:numFolds
-        disp(strcat('ITERAÇÃO', num2str(k)));
+    % Finding classes characteristics--------------------------------------
+    cls(numCls).ind = [];
+    cls(numCls).size = 0;
+    cls(numCls).centroid = zeros(1, numDim);
+    for c=1:numCls
+        cls(c).ind = find(trainTargets == c);
+        cls(c).size = size(find(trainTargets == c), 1);
+        cls(c).centroid = mean(trainSet(cls(c).ind, :), 1);
+    end
+    %----------------------------------------------------------------------
+    % Finding pairs of classes in which GFI is less than 0.15
+    pairs = fisherIndPairs(trainSet, numCls, cls, 0.15);
+    % Creating new instances between each pair of class
+    newInstances = []; newTargets = [];
+    for p=1:size(pairs, 1)
+        cls1 = pairs(p, 1);
+        cls2 = pairs(p, 2);
+        % Values range for new instances
+        minRange = min(cls(cls1).centroid, cls(cls2).centroid);
+        maxRange = max(cls(cls1).centroid, cls(cls2).centroid);
+        numPoints = max(cls(cls1).size, cls(cls2).size);
         
-        centroids = [];
-        
-        % Test Set
-        testIdx = foldIdx(k).indices;
-        testSet = dataF(testIdx, :); testTargets = dataTNum(testIdx);
-        
-        % Train Set
-        trainIdx = [];
-        for i=1:numFolds
-            if i ~= k
-                trainIdx = [trainIdx; foldIdx(i).indices];
+        [newInstances, newTargets] = ...
+            createInstances(minRange, maxRange, numPoints, cls1, cls2, numDim);
+    end
+    
+    trainSet = [trainSet; newInstances];
+    trainTargets = [trainTargets; newTargets];
+    % In case of duplicated instances, they will be erased
+    [u, rows, ~] = unique(trainSet, 'rows');
+    if size(u, 1) < size(trainSet, 1)
+        indDupRows = setdiff(1:size(trainSet, 1), rows);
+        trainSet(indDupRows, :) = []; trainTargets(indDupRows) = [];
+    end
+    
+    % From now on the algorithm remains the same of original VDBC
+    centroids = [];
+    
+    centroids = train(trainSet, trainTargets, numDim, centroids);
+    output = testing(testSet, centroids);
+    % size(unique(testTargets), 1) ---> sometimes not all classes are
+    % present on test set, so it is passed the size of present classes
+    mauc = calculateMAUC(output, testTargets, size(unique(testTargets), 1));
+end
+
+function pairs = fisherIndPairs(trainSet, numCls, class, limit)
+% Calculate GFI for each pair of classes and return them if the value is
+% less than the specified limit
+    
+    pairs = [];
+
+    for cls1 = 1:numCls-1
+        for cls2 = cls1+1:numCls
+            inds = [class(cls1).ind; class(cls2).ind];
+            
+            globalCentroid = mean(trainSet(inds, :), 1);
+            
+            numerator = ...
+                (class(cls1).size * distance(transpose(class(cls1).centroid), transpose(globalCentroid))) + ...
+                (class(cls2).size * distance(transpose(class(cls2).centroid), transpose(globalCentroid)));
+            
+            denominator = 0;
+            for i=1:class(cls1).size
+                denominator = denominator + distance(transpose(trainSet(class(cls1).ind(i), :)), transpose(class(cls1).centroid));
             end
+            
+            for i=1:class(cls2).size
+                denominator = denominator + distance(transpose(trainSet(class(cls2).ind(i), :)), transpose(class(cls2).centroid));
+            end
+            
+            if (numerator/denominator) < limit
+                pairs = [pairs; cls1 cls2];
+            end
+            
         end
-        trainSet = dataF(trainIdx, :); trainTargets = dataTNum(trainIdx);
-        
-        centroids = train(trainSet, trainTargets, numDim, centroids);
-        output = testing(testSet, centroids);
-        % size(unique(testTargets), 1) ---> sometimes not all classes are
-        % present on test set, so it is passed the size of present classes
-        results(k) = calculateMAUC(output, testTargets, size(unique(testTargets), 1));
     end
 end
 
-function foldIdx = kfoldIndices(numCls, dataTNum, numFolds)
-% Function for creating indices for the k folds    
-    foldIdx(numFolds).indices = [];
-    clsInd(numCls).indices = [];
-    clsFoldInd(numCls).indices = [];
-    % Getting the indices of instances from each class and then the inside
-    % class indices for folds
-    for i=1:numCls
-        clsInd(i).indices = find(dataTNum == i);
-        clsFoldInd(i).indices = crossvalind('Kfold', size(clsInd(i).indices, 1), numFolds);
+function [set, targets] = createInstances(rangeMin, rangeMax, numPoints, cls1, cls2, numDim)
+% Function to create instances between two class centroids    
+    
+    set = zeros(numPoints, numDim);
+    targets = zeros(numPoints, 1);
+    
+    for d = 1 : numDim
+        set(:, d) = rangeMin(d) + (rangeMax(d) - rangeMin(d))*rand(numPoints, 1);
     end
     
-    for i=1:numFolds
-        for j=1:numCls
-            foldIdx(i).indices = [foldIdx(i).indices; clsInd(j).indices(clsFoldInd(j).indices == i)];
+    for i=1:numPoints
+        if rand() > 0.5
+            targets(i) = cls1;
+        else
+            targets(i) = cls2;
         end
     end
 end
@@ -104,8 +143,6 @@ function centroids = train(trainSet, trainTargets, numDim, centroids)
                     end
                 else
                     % Only one nearest neighbor
-                    neighborCls = trainTargets(nearest);
-                    
                     if trainTargets(i) == trainTargets(nearest)
                         % If they belong to the same class, a centroid is
                         % created between them
@@ -166,8 +203,6 @@ function centroids = train(trainSet, trainTargets, numDim, centroids)
                 end
             else
                 % Only one nearest neighbor
-                neighborCls = trainTargets(nearest);
-                    
                 if trainTargets(i) == trainTargets(nearest)
                     % If they belong to the same class, a centroid is
                     % created between them
