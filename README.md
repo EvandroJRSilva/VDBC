@@ -1,11 +1,7 @@
 # VDBC
 
-Voronoi Diagram Based Classifier (VDBC) is a Prototype Generation classification model based on Chang W* algorithm [1]. It tries to dynamically create regions through the sample space, assigning to each cell a respective class. The seeds are created as follows. For each training instance its nearest neighbor is found. A class verification is executed. If the neighbor is from the same class a seed (or centroid) is created between them. Otherwise the current instance becomes the seed. However, if the neighbor is a seed, an action will be performed only if the seed belongs to a different class. In this case the current instance also becomes a seed.
-
-All seeds are automatically assigned to the training sample class. After the training phase, the sample space is found to be divided into several cells, each one assigned to a different class. With the diagram constructed the testing phase begins. In the testing phase, for each unknown instance its nearest neighbor, i.e., the nearest seed is found. The unknown instance is classified accordingly to the nearest seed.
+Generalized Fisher Index (GFI) Modification is the third modification related in [1]. For each pair of classes its GFI value is calculated. This value indicates how close are the classes, therefore it also indicates a possible existence of border overlapping. All pairs in which GFI value is less than 0.15 are selected. Synthetic instances are created between the selected pairs of classes. After this oversampling procedure VDBC works as the original version.
 
 **Related article**
 
-Evandro J.R. Silva and Cleber Zanchettin. "A Voronoi Diagram Based Classifier for Multiclass Imbalanced Data Sets". *2016 5th Brazilian Conference on Intelligent Systems (BRACIS)*, pp. 109 - 114, 2016.
-
-[1] Chin-Liang Chang. "Finding Prototypes For Nearest Neighbor Classifiers". *IEEE Transactions on Computers*, vol. C-23, no. 11, pp. 1179 - 1184, 1974.
+[1] Evandro J.R. Silva and Cleber Zanchettin. "A Voronoi Diagram Based Classifier for Multiclass Imbalanced Data Sets". *2016 5th Brazilian Conference on Intelligent Systems (BRACIS)*, pp. 109 - 114, 2016.
