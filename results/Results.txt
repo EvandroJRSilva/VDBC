@@ -1,0 +1,23 @@
+VDBC M2 Results MAUC (Mean/Standard Deviation) 5-fold
+
+Abalone:	0.7414    0.0173
+Arrhythmia:	0.7616    0.0374
+Balance Scale:	0.6899    0.0265
+Car Eval:	0.7345    0.0256
+Contraceptive:	0.5171    0.0036
+Dermatology:	0.8525    0.0571
+Ecoli:		0.8836    0.0375
+Gene:		
+Glass:		0.8563    0.0273
+Hayes:		0.6855    0.0456
+Horse:		0.5972    0.0286
+Nursery:	0.8293    0.0222
+Page Blocks:	0.8295    0.0089
+Post Operative:	0.6851    0.0308
+Satimage:	
+Shuttle:	
+Soybean:	0.9570    0.0127
+Thyroid:	
+Wine:		0.7801    0.0289
+Yeast:		0.7018    0.0364
+Zoo:		0.9191    0.0296
