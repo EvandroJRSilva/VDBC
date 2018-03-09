@@ -5,6 +5,9 @@
 %=============DATA============================    
 numFolds = 5;
 
+% Vector to store MAUC values
+results(numFolds) = 0;
+
 for dataSet = 1:21
     switch dataSet
     % Possible data sets
@@ -52,12 +55,53 @@ for dataSet = 1:21
             db = 'zoo';                 % 07 classes
     end
     
+    % Pre-process==========================================================
     [dataF, dataTNum, numCls, numDim] = getDB(db);
     
+    % Separating data into k folds
+    foldIdx = kfoldIndices(numCls, dataTNum, numFolds);
+    
     disp(db);
-    results = VDBC(dataF, dataTNum, numCls, numDim, numFolds);
+    
+    for k=1:numFolds
+        disp(strcat('ITERAÇÃO', num2str(k)));
+        
+        % Test Set
+        testIdx = foldIdx(k).indices;
+        testSet = dataF(testIdx, :); testTargets = dataTNum(testIdx);
+        
+        % Train Set
+        trainIdx = [];
+        for i=1:numFolds
+            if i ~= k
+                trainIdx = [trainIdx; foldIdx(i).indices];
+            end
+        end
+        trainSet = dataF(trainIdx, :); trainTargets = dataTNum(trainIdx);
+        
+        results(k) = VDBC(trainSet, trainTargets, testSet, testTargets, numDim, numCls, numFolds);
+    end
     
     fileName = strcat(db, '_', num2str(numFolds), 'folds');
     
     save(fileName, 'results')
+end
+
+function foldIdx = kfoldIndices(numCls, dataTNum, numFolds)
+% Function for creating indices for the k folds    
+    foldIdx(numFolds).indices = [];
+    clsInd(numCls).indices = [];
+    clsFoldInd(numCls).indices = [];
+    % Getting the indices of instances from each class and then the inside
+    % class indices for folds
+    for i=1:numCls
+        clsInd(i).indices = find(dataTNum == i);
+        clsFoldInd(i).indices = crossvalind('Kfold', size(clsInd(i).indices, 1), numFolds);
+    end
+    
+    for i=1:numFolds
+        for j=1:numCls
+            foldIdx(i).indices = [foldIdx(i).indices; clsInd(j).indices(clsFoldInd(j).indices == i)];
+        end
+    end
 end
