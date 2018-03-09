@@ -1,4 +1,4 @@
-# VDBC.M4
+# VDBC M4
 
 Fourth modification of VDBC.
 
