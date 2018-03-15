@@ -1,191 +1,178 @@
-function [results] = VDBC(dataF, dataTNum, numCls, numDim, numFolds)
-% Function VDBC for Voronoi Diagram Based Classifier. It is based on Chang
-% W* algorithm:
-%   - Select a random instance;
-%   - Find its nearest neighbor
-%       + If they belong to the same class
-%           - Create a centroid between them.
-%       + Else
-%           - Current selected instance becomes a centroid.
-%   - Test unknown instances with built centroids
-
-%% Pre-process
-    % Vector to store MAUC values
-    results(numFolds) = 0;
-    % Separating data into k folds
-    foldIdx = kfoldIndices(numCls, dataTNum, numFolds);
+function [mauc, prototypes] = VDBC(trainSet, trainTargets, testSet, testTargets, numDim, numCls)
+% This is VDBC M5, the fifth modification of VDBC. This is maybe the
+% biggest modification among M1 to M5 versions. The new algorithm is as
+% follows:
+%   - Find the smallest distance between a pair a of instances of traning
+%   set
+%       + The half of this distance is how much a centroid radius will grow
+%       at each time
+%   - All training instances become centroid in the beggining
+%   - Begenning with the smallest classes, each centroid grows its radius
+%       + If the growing of a radius makes it touch or trespass the radius
+%       of another centroid
+%           - Merge both centroids if they are from the same class,
+%           creating a new centroid between them
+%           - Stop the growing of both centroids if they are from different
+%           classes
+%
+%   Centroids are now mapped as n X d+3 matrix, in which d+1 is the label,
+%   d+2 is the radius value and d+3 is a bollean indicating if the radius
+%   can or cannot grow.
     
-%% Train and Test
-    for k=1:numFolds
-        disp(strcat('ITERAÇÃO', num2str(k)));
-        
-        centroids = [];
-        
-        % Test Set
-        testIdx = foldIdx(k).indices;
-        testSet = dataF(testIdx, :); testTargets = dataTNum(testIdx);
-        
-        % Train Set
-        trainIdx = [];
-        for i=1:numFolds
-            if i ~= k
-                trainIdx = [trainIdx; foldIdx(i).indices];
-            end
-        end
-        trainSet = dataF(trainIdx, :); trainTargets = dataTNum(trainIdx);
-        
-        centroids = train(trainSet, trainTargets, numDim, centroids);
-        output = testing(testSet, centroids);
-        % size(unique(testTargets), 1) ---> sometimes not all classes are
-        % present on test set, so it is passed the size of present classes
-        results(k) = calculateMAUC(output, testTargets, size(unique(testTargets), 1));
+    % Growing Radius ratio
+    gRadius = findGRadius(trainSet);
+    
+    % Setting the order of classes to grow (from lowest to highest)
+    sizeCls = zeros(1, numCls);
+    for c=1:numCls
+        sizeCls(c) = size(find(trainTargets == c), 1);
     end
+    
+    [~, classOrder] = sort(sizeCls);
+    
+    
+    % Creating and filling centroids set
+    centroids = zeros(size(trainSet, 1), size(trainSet, 2)+3);
+    centroids(:, 1:numDim) = trainSet; 
+    centroids(:, numDim+1) = trainTargets;
+    centroids(:, numDim+2) = 0; centroids(:, numDim+3) = 1;
+    
+    % Training
+    centroids = train(centroids, gRadius, classOrder, numDim);
+    prototypes = size(centroids, 1);
+    % Test
+    output = testing(testSet, centroids(:, 1:numDim+1));
+    % size(unique(testTargets), 1) ---> sometimes not all classes are
+    % present on test set, so it is passed the size of present classes
+    mauc = calculateMAUC(output, testTargets, size(unique(testTargets), 1));
 end
 
-function foldIdx = kfoldIndices(numCls, dataTNum, numFolds)
-% Function for creating indices for the k folds    
-    foldIdx(numFolds).indices = [];
-    clsInd(numCls).indices = [];
-    clsFoldInd(numCls).indices = [];
-    % Getting the indices of instances from each class and then the inside
-    % class indices for folds
-    for i=1:numCls
-        clsInd(i).indices = find(dataTNum == i);
-        clsFoldInd(i).indices = crossvalind('Kfold', size(clsInd(i).indices, 1), numFolds);
-    end
+function radius = findGRadius(trainSet)
+% This function finds the smallest distance between a pair of instances and
+% return half of the distance as a growing radius ratio.
     
-    for i=1:numFolds
-        for j=1:numCls
-            foldIdx(i).indices = [foldIdx(i).indices; clsInd(j).indices(clsFoldInd(j).indices == i)];
-        end
-    end
-end
-
-function centroids = train(trainSet, trainTargets, numDim, centroids)
-% Training function
     
-    % For each training instance
+    % Vector to store the distance of each instance and its nearest
+    % neighbor
+    smallest = zeros(1, size(trainSet, 1));
+    
+    % Finding the smallest distance for each instance
     for i=1:size(trainSet, 1)
         dist = distance(transpose(trainSet(i, :)), transpose(trainSet));
-        dist(i) = NaN; % distance to itself
-        if ~isempty(centroids)
-            % If there already exist at least one centroid
-            % The last column of a centroid holds its class, therefore it
-            % is not counted during distance calculation
-            dist2 = distance(transpose(trainSet(i, :)), transpose(centroids(:, 1:end-1)));
-            
-            if min(dist) < min(dist2)
-                % If another instance is closer than any centroid
-                nearest = find(dist == min(dist));
-                
-                if size(nearest,2) > 1
-                    % If two or more instances are equidistant
-                    possibleClasses = zeros(1, size(nearest,2));
-                    for j=1:size(nearest,2)
-                        possibleClasses(j) = trainTargets(nearest(j));
-                    end
-                    
-                    if all(possibleClasses == possibleClasses(1))
-                        % If all belong to the same class, create a
-                        % centroid among them
-                        newCtr = zeros(1, numDim+1);
-                        for d=1:numDim
-                            newCtr(1, d) = mean(trainSet([i nearest], d));
+        dist(i) = NaN; % distance to itself is NaN
+        smallest(i) = min(dist);
+    end
+    
+    radius = min(smallest(smallest>0))/2;
+end
+
+function centroids = train(centroids, gRadius, classOrder, numDim)
+% Function to update radius and number of centroids
+
+    while any(centroids(:, end))
+        for c=1:size(classOrder, 2)
+            currentCls = classOrder(c);
+            currentClsIdx = find(centroids(:, numDim+1) == currentCls);
+            % For each centroid of the current class. The number of
+            % centroids for a class is expected to change
+            i = 1; %flag
+            while i <= size(currentClsIdx, 1)
+                % If centroid is growable
+                id = currentClsIdx(i);
+                if centroids(id, end)
+                    % Verifying with flag. If the growth is ok the centroid
+                    % is updated
+                    updatingCentroid = centroids(id, :);
+                    updatingCentroid(1, numDim+2) = ...
+                        updatingCentroid(1, numDim+2) + gRadius;
+                    % Finding its nearest neighbor(s)
+                    dist = distance(transpose(centroids(id, 1:numDim)), ...
+                        transpose(centroids(:, 1:numDim)));
+                    dist(id) = NaN; %distance to itself
+                    nearest = find(dist == min(dist));
+                    if size(nearest, 2) == 1
+                        % Only one nearest neighbor
+                        if (dist(nearest) - updatingCentroid(1, numDim+2) - ...
+                                centroids(nearest, numDim+2)) > 0
+                            % If the growth of radius is possible and do
+                            % not touch the radius of its nearest neighbor
+                            % the current centroid is updated
+                            centroids(id, :) = updatingCentroid;
+                        else
+                            % If the growth of radius makes it touch or
+                            % trespass the other radius
+                            if centroids(id, numDim+1) == centroids(nearest, numDim+1)
+                                % If both centroids are from the same class
+                                newCtr = zeros(1, numDim+3);
+                                newCtr(1, numDim+1) = centroids(id, numDim+1);
+                                newCtr(1, numDim+2) = max(centroids(id, numDim+2), ...
+                                    centroids(nearest, numDim+2));
+                                newCtr(1, end) = 1;
+                                for d=1:numDim
+                                    newCtr(1, d) = mean(centroids([id nearest], d));
+                                end
+                                % Inserting new centroid and erasing the
+                                % other two from the set
+                                centroids = [centroids; newCtr];
+                                centroids([id nearest], :) = [];
+                                % Updating current class indices for the
+                                % while loop
+                                currentClsIdx = find(centroids(:, numDim+1) == currentCls);
+                            else
+                                % If centroids are from different classes.
+                                % The objective of the algorithm is to grow
+                                % centroids to merge them. If it is not
+                                % possible to grow anymore nothing is done,
+                                % except changing the growth flag
+                                centroids([id nearest], end) = 0;
+                            end
                         end
-                        newCtr(1, end) = possibleClasses(1);
-                        centroids = [centroids; newCtr];
                     else
-                        % If at least one of them belongs to different
-                        % class, the current instance becomes a centroid
-                        newCtr = zeros(1, numDim+1);
-                        newCtr(1, 1:end-1) = trainSet(i, :); 
-                        newCtr(1, end) = trainTargets(i);
-                        centroids = [centroids; newCtr];
-                    end
-                else
-                    % Only one nearest neighbor
-                    neighborCls = trainTargets(nearest);
-                    
-                    if trainTargets(i) == trainTargets(nearest)
-                        % If they belong to the same class, a centroid is
-                        % created between them
-                        newCtr = zeros(1, numDim+1);
-                        for d=1:numDim
-                            newCtr(d) = mean(trainSet([i nearest], d));
+                        % More than one (equidistant) nearest neighbor
+                        
+                        % Distances after radius growth
+                        afterDist = dist(nearest) - updatingCentroid(1, numDim+2) - ...
+                                transpose(centroids(nearest, numDim+2));
+                        if all(afterDist > 0)
+                            % It is possible to grow independently of
+                            % neighbors classes
+                            centroids(id, :) = updatingCentroid;
+                        else
+                            % The radius touches or trespass at least
+                            % another radius after growing. It is necessary
+                            % to find those neighbors whose radius are
+                            % touched
+                            touchedNeighbors = afterDist <= 0;                                                        
+                            if all(centroids(nearest(touchedNeighbors), numDim+1) == centroids(id, numDim+1))
+                                % If all the touched neighbors are from the
+                                % same class
+                                newCtr = zeros(1, numDim+3);
+                                newCtr(1, numDim+1) = centroids(id, numDim+1);
+                                newCtr(1, numDim+2) = max(centroids([id nearest(touchedNeighbors)], numDim+2));
+                                newCtr(1, end) = 1;
+                                for d=1:numDim
+                                    newCtr(1, d) = mean(centroids([id nearest(touchedNeighbors)], d));
+                                end
+                                % Inserting new centroid and erasing the
+                                % other two from the set
+                                centroids = [centroids; newCtr];
+                                centroids([id nearest(touchedNeighbors)], :) = [];
+                                % Updating current class indices for the
+                                % while loop
+                                currentClsIdx = find(centroids(:, numDim+1) == currentCls);
+                            else
+                                % At least one of the touched centroids is
+                                % from a different class. For
+                                % simplification, in this case we just
+                                % change their growth flag
+                                centroids([id nearest(touchedNeighbors)], end) = 0;
+                            end
                         end
-                        newCtr(1, end) = trainTargets(i);
-                        centroids = [centroids; newCtr];
-                    else
-                        % If they belong to different classes the current
-                        % instance becomes a centroid
-                        newCtr = zeros(1, numDim+1);
-                        newCtr(1, 1:end-1) = trainSet(i, :); 
-                        newCtr(1, end) = trainTargets(i);
-                        centroids = [centroids; newCtr];
                     end
                 end
-            else
-                % If a centroid is closer than any instance
-                nearCtrIdx = find(dist2 == min(dist2));
-                nearCtrCls = centroids(nearCtrIdx, end);
-                % If they belong to the same class nothing is done.
-                % Otherwise, current instance becomes a centroid
-                if trainTargets(i) ~= nearCtrCls
-                    newCtr = zeros(1, numDim+1);
-                    newCtr(1, 1:end-1) = trainSet(i, :); 
-                    newCtr(1, end) = trainTargets(i);
-                    centroids = [centroids; newCtr];
-                end
+                % Updating i flag value
+                i = i+1;
             end
-        else
-            % Centroids set is still empty
-            nearest = find(dist == min(dist));
-            if size(nearest,2) > 1
-                % If two or more instances are equidistant
-                possibleClasses = zeros(1, size(nearest,2));
-                for j=1:size(nearest,2)
-                    possibleClasses(j) = trainTargets(nearest(j));
-                end
-                    
-                if all(possibleClasses == possibleClasses(1))
-                    % If all belong to the same class, create a centroid 
-                    % among them
-                    newCtr = zeros(1, numDim+1);
-                    for d=1:numDim
-                        newCtr(1, d) = mean(trainSet([i nearest], d));
-                    end
-                    newCtr(1, end) = possibleClasses(1);
-                    centroids = [centroids; newCtr];
-                else
-                    % If at least one of them belongs to different class, 
-                    % the current instance becomes a centroid
-                    newCtr = zeros(1, numDim+1);
-                    newCtr(1, 1:end-1) = trainSet(i, :); 
-                    newCtr(1, end) = trainTargets(i);
-                    centroids = [centroids; newCtr];
-                end
-            else
-                % Only one nearest neighbor
-                neighborCls = trainTargets(nearest);
-                    
-                if trainTargets(i) == trainTargets(nearest)
-                    % If they belong to the same class, a centroid is
-                    % created between them
-                    newCtr = zeros(1, numDim+1);
-                    for d=1:numDim
-                        newCtr(d) = mean(trainSet([i nearest], d));
-                    end
-                    newCtr(1, end) = trainTargets(i);
-                    centroids = [centroids; newCtr];
-                else
-                    % If they belong to different classes the current
-                    % instance becomes a centroid
-                    newCtr = zeros(1, numDim+1);
-                    newCtr(1, 1:end-1) = trainSet(i, :); 
-                    newCtr(1, end) = trainTargets(i);
-                    centroids = [centroids; newCtr];
-                end
-            end  
         end
     end
 end
