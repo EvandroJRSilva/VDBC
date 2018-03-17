@@ -1,23 +1,23 @@
-VDBC M2 Results MAUC (Mean/Standard Deviation) 5-fold
+VDBC M2 Results MAUC (Mean/Standard Deviation) and Number of Prototypes (Mean/Standard Deviation) 5-fold
 
-Abalone:	0.7414    0.0173
-Arrhythmia:	0.7616    0.0374
-Balance Scale:	0.6899    0.0265
-Car Eval:	0.7345    0.0256
-Contraceptive:	0.5171    0.0036
-Dermatology:	0.8525    0.0571
-Ecoli:		0.8836    0.0375
+Abalone:	0.7414    0.0173	15420.0    028.7889
+Arrhythmia:	0.7616    0.0374	00561.4    028.5797
+Balance Scale:	0.6899    0.0265	00545.8    021.5917
+Car Eval:	0.7345    0.0256	07949.4    110.1376
+Contraceptive:	0.5171    0.0036	15781.0    284.9714
+Dermatology:	0.8525    0.0571	01277.6    340.5493
+Ecoli:		0.8836    0.0375	00506.8    005.3572
 Gene:		
-Glass:		0.8563    0.0273
-Hayes:		0.6855    0.0456
-Horse:		0.5972    0.0286
-Nursery:	0.8293    0.0222
-Page Blocks:	0.8295    0.0089
-Post Operative:	0.6851    0.0308
+Glass:		0.8563    0.0273	00385.4    010.1390
+Hayes:		0.6855    0.0456	00193.6    005.6391
+Horse:		0.5972    0.0286	02334.4    030.3859
+Nursery:	0.8293    0.0222	09338.4    121.4096
+Page Blocks:	0.8295    0.0089	26224.0    272.6329
+Post Operative:	0.6851    0.0308	00140.2    006.3797
 Satimage:	
 Shuttle:	
-Soybean:	0.9570    0.0127
+Soybean:	0.9570    0.0127	00864.0    014.2127
 Thyroid:	
-Wine:		0.7801    0.0289
-Yeast:		0.7018    0.0364
-Zoo:		0.9191    0.0296
+Wine:		0.7801    0.0289	01046.8    286.9298
+Yeast:		0.7018    0.0364	02327.0    038.0197
+Zoo:		0.9191    0.0296	00077.8    000.8367
