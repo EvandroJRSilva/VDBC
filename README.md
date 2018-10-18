@@ -1,4 +1,4 @@
-# VDBC
+# VDBC M5
 
 Voronoi Diagram Based Classifier Modification 5 (VDBC M5) is the fifth modification of VDBC. It is possibly the greatest modification of the algorithm so far. This modification in not present in any paper yet.
 
