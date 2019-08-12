@@ -1,158 +1,89 @@
-function [results] = VDBC(dataF, dataTNum, numCls, numDim, numFolds)
-% Function VDBC for Voronoi Diagram Based Classifier. It is based on Chang
-% W* algorithm:
-%   - Select a random instance;
-%   - Find its nearest neighbor
-%       + If they belong to the same class
-%           - Create a centroid between them.
-%       + Else
-%           - Current selected instance becomes a centroid.
-%   - Test unknown instances with built centroids
-
-%% Pre-process
-    % Vector to store MAUC values
-    results(numFolds) = 0;
-    % Separating data into k folds
-    foldIdx = kfoldIndices(numCls, dataTNum, numFolds);
+function [mauc] = VDBC(trainSet, trainTargets, testSet, testTargets, numNeighbor, numDim)
+% VDBC algorithm with modification. During training phase there will be
+% considered k-NN instances. For each instance its k nearest neighbors may
+% be composed by centroids and other instances. For simplification purposes
+% both sets are merged
     
-%% Train and Test
-    for k=1:numFolds
-        disp(strcat('ITERAÇÃO', num2str(k)));
-        
-        centroids = [];
-        
-        % Test Set
-        testIdx = foldIdx(k).indices;
-        testSet = dataF(testIdx, :); testTargets = dataTNum(testIdx);
-        
-        % Train Set
-        trainIdx = [];
-        for i=1:numFolds
-            if i ~= k
-                trainIdx = [trainIdx; foldIdx(i).indices];
-            end
-        end
-        trainSet = dataF(trainIdx, :); trainTargets = dataTNum(trainIdx);
-        
-        centroids = train(trainSet, trainTargets, numDim, centroids);
-        output = testing(testSet, centroids);
-        % size(unique(testTargets), 1) ---> sometimes not all classes are
-        % present on test set, so it is passed the size of present classes
-        results(k) = calculateMAUC(output, testTargets, size(unique(testTargets), 1));
-    end
+    centroids = [];
+    
+    centroids = train(trainSet, trainTargets, numDim, centroids, numNeighbor);
+    output = testing(testSet, centroids);
+    % size(unique(testTargets), 1) ---> sometimes not all classes are
+    % present on test set, so it is passed the size of present classes
+    mauc = calculateMAUC(output, testTargets, size(unique(testTargets), 1));
 end
 
-function foldIdx = kfoldIndices(numCls, dataTNum, numFolds)
-% Function for creating indices for the k folds    
-    foldIdx(numFolds).indices = [];
-    clsInd(numCls).indices = [];
-    clsFoldInd(numCls).indices = [];
-    % Getting the indices of instances from each class and then the inside
-    % class indices for folds
-    for i=1:numCls
-        clsInd(i).indices = find(dataTNum == i);
-        clsFoldInd(i).indices = crossvalind('Kfold', size(clsInd(i).indices, 1), numFolds);
-    end
-    
-    for i=1:numFolds
-        for j=1:numCls
-            foldIdx(i).indices = [foldIdx(i).indices; clsInd(j).indices(clsFoldInd(j).indices == i)];
-        end
-    end
-end
-
-function centroids = train(trainSet, trainTargets, numDim, centroids)
+function centroids = train(trainSet, trainTargets, numDim, centroids, numNeighbor)
 % Training function
     
     % For each training instance
     for i=1:size(trainSet, 1)
         dist = distance(transpose(trainSet(i, :)), transpose(trainSet));
         dist(i) = NaN; % distance to itself
+        [nearInstD, nearInst] = sort(dist);
+        
         if ~isempty(centroids)
             % If there already exist at least one centroid
             % The last column of a centroid holds its class, therefore it
             % is not counted during distance calculation
             dist2 = distance(transpose(trainSet(i, :)), transpose(centroids(:, 1:end-1)));
+            [nearCentD, nearCent] = sort(dist2);
             
-            if min(dist) < min(dist2)
-                % If another instance is closer than any centroid
-                nearest = find(dist == min(dist));
-                
-                if size(nearest,2) > 1
-                    % If two or more instances are equidistant
-                    possibleClasses = zeros(1, size(nearest,2));
-                    for j=1:size(nearest,2)
-                        possibleClasses(j) = trainTargets(nearest(j));
-                    end
-                    
-                    if all(possibleClasses == possibleClasses(1))
-                        % If all belong to the same class, create a
-                        % centroid among them
-                        newCtr = zeros(1, numDim+1);
-                        for d=1:numDim
-                            newCtr(1, d) = mean(trainSet([i nearest], d));
-                        end
-                        newCtr(1, end) = possibleClasses(1);
-                        centroids = [centroids; newCtr];
+            
+            nearestInst = [];
+            nearestCent = [];
+            flag = 1; % For centroids. See explanation below
+            for n=1:numNeighbor
+                % For instances there will always be n nearest neighbors,
+                % which is not true for centroids, e.g., if only one
+                % centroid was created and n == 2
+                if flag <= size(nearCent, 2)
+                    if nearInstD(n) < nearCentD(flag)
+                        nearestInst = [nearestInst nearInst(n)];
                     else
-                        % If at least one of them belongs to different
-                        % class, the current instance becomes a centroid
-                        newCtr = zeros(1, numDim+1);
-                        newCtr(1, 1:end-1) = trainSet(i, :); 
-                        newCtr(1, end) = trainTargets(i);
-                        centroids = [centroids; newCtr];
+                        nearestCent = [nearestCent nearCent(flag)];
+                        flag = flag+1;
                     end
                 else
-                    % Only one nearest neighbor
-                    neighborCls = trainTargets(nearest);
-                    
-                    if trainTargets(i) == trainTargets(nearest)
-                        % If they belong to the same class, a centroid is
-                        % created between them
-                        newCtr = zeros(1, numDim+1);
-                        for d=1:numDim
-                            newCtr(d) = mean(trainSet([i nearest], d));
-                        end
-                        newCtr(1, end) = trainTargets(i);
-                        centroids = [centroids; newCtr];
-                    else
-                        % If they belong to different classes the current
-                        % instance becomes a centroid
-                        newCtr = zeros(1, numDim+1);
-                        newCtr(1, 1:end-1) = trainSet(i, :); 
-                        newCtr(1, end) = trainTargets(i);
-                        centroids = [centroids; newCtr];
-                    end
+                    % In here there is no more near centroids to fill the
+                    % numNeighbors
+                    nearestInst = [nearestInst nearInst(n)];
                 end
-            else
-                % If a centroid is closer than any instance
-                nearCtrIdx = find(dist2 == min(dist2));
-                nearCtrCls = centroids(nearCtrIdx, end);
-                % If they belong to the same class nothing is done.
-                % Otherwise, current instance becomes a centroid
-                if trainTargets(i) ~= nearCtrCls
+            end
+            
+            % If all nearest neighbors are centroids of the same class, a
+            % new centroid is created among them, then they're erased
+            if size(nearestCent, 2) == numNeighbor
+                possibleClasses = centroids(nearestCent, end);
+                if all(possibleClasses == possibleClasses(1))
+                    % A centroid of centroids
+                    newCtr = zeros(1, numDim+1);
+                    for d=1:numDim
+                        newCtr(1, d) = mean(centroids(nearestCent, d));
+                    end
+                    newCtr(1, end) = possibleClasses(1);
+                    centroids = [centroids; newCtr];
+                    % Erasing centroids
+                    centroids(nearestCent, :) = [];
+                else
+                    % At least one centroid is from different class
                     newCtr = zeros(1, numDim+1);
                     newCtr(1, 1:end-1) = trainSet(i, :); 
                     newCtr(1, end) = trainTargets(i);
                     centroids = [centroids; newCtr];
                 end
-            end
-        else
-            % Centroids set is still empty
-            nearest = find(dist == min(dist));
-            if size(nearest,2) > 1
-                % If two or more instances are equidistant
-                possibleClasses = zeros(1, size(nearest,2));
-                for j=1:size(nearest,2)
-                    possibleClasses(j) = trainTargets(nearest(j));
-                end
-                    
+            else
+                % Nearest neighbors are composed by instances and centroids
+                % or only by instances
+                possibleClasses = zeros(1, numNeighbor);
+                possibleClasses(1, 1:size(nearestInst, 2)) = trainSet(nearestInst);
+                possibleClasses(1, size(nearestInst, 2)+1:end) = centroids(nearestCent, end);
                 if all(possibleClasses == possibleClasses(1))
                     % If all belong to the same class, create a centroid 
                     % among them
                     newCtr = zeros(1, numDim+1);
                     for d=1:numDim
-                        newCtr(1, d) = mean(trainSet([i nearest], d));
+                        newCtr(1, d) = mean([trainSet([i nearestInst], d); centroids(nearestCent, d)]);
                     end
                     newCtr(1, end) = possibleClasses(1);
                     centroids = [centroids; newCtr];
@@ -164,28 +95,32 @@ function centroids = train(trainSet, trainTargets, numDim, centroids)
                     newCtr(1, end) = trainTargets(i);
                     centroids = [centroids; newCtr];
                 end
-            else
-                % Only one nearest neighbor
-                neighborCls = trainTargets(nearest);
-                    
-                if trainTargets(i) == trainTargets(nearest)
-                    % If they belong to the same class, a centroid is
-                    % created between them
-                    newCtr = zeros(1, numDim+1);
-                    for d=1:numDim
-                        newCtr(d) = mean(trainSet([i nearest], d));
-                    end
-                    newCtr(1, end) = trainTargets(i);
-                    centroids = [centroids; newCtr];
-                else
-                    % If they belong to different classes the current
-                    % instance becomes a centroid
-                    newCtr = zeros(1, numDim+1);
-                    newCtr(1, 1:end-1) = trainSet(i, :); 
-                    newCtr(1, end) = trainTargets(i);
-                    centroids = [centroids; newCtr];
+            end
+        else
+            % Centroids set is still empty
+            nearest = nearInst(numNeighbor);
+            possibleClasses = zeros(1, size(nearest,2));
+            for j=1:size(nearest,2)
+                possibleClasses(j) = trainTargets(nearest(j));
+            end
+            
+            if all(possibleClasses == possibleClasses(1))
+                % If all belong to the same class, create a centroid among 
+                % them
+                newCtr = zeros(1, numDim+1);
+                for d=1:numDim
+                    newCtr(1, d) = mean(trainSet([i nearest], d));
                 end
-            end  
+                newCtr(1, end) = possibleClasses(1);
+                centroids = [centroids; newCtr];
+            else
+                % If at least one of them belongs to different class, the 
+                % current instance becomes a centroid
+                newCtr = zeros(1, numDim+1);
+                newCtr(1, 1:end-1) = trainSet(i, :); 
+                newCtr(1, end) = trainTargets(i);
+                centroids = [centroids; newCtr];
+            end
         end
     end
 end
